@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: SEE LICENSE IN LICENSE
+// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
 import {VRFConsumerBaseV2Plus} from "@chainlink/contracts/src/v0.8/vrf/dev/VRFConsumerBaseV2Plus.sol";
@@ -16,6 +16,7 @@ contract Raffle is VRFConsumerBaseV2Plus {
     error SendMoreToEnterRaffle();
     error Raffle_TransferFailed();
     error Raffle_NotOpen();
+    error Raffle_UpkeepNotNeeded(uint256 balance, uint256 playersLength, uint256 raffleState);
 
     /**
      * Type declarations
@@ -76,9 +77,32 @@ contract Raffle is VRFConsumerBaseV2Plus {
         emit RaffleEntered(msg.sender);
     }
 
-    function pickWinner() public {
-        if (block.timestamp - s_lastTimeStamp < i_interval) {
-            revert();
+    /**
+     * RETURN TRUE ONLY IF FOLLOWING CONDITIONS WILL MEET.
+     * 1.) The time interval has passed between raffle runs
+     * 2.) state is OPEN
+     * 3.) The contract has ETH
+     * 4.) The subscription has LINK.
+     */
+    function checkUpKeep(bytes memory /* checkData */ )
+        public
+        view
+        returns (bool upkeepNeeded, bytes memory /* performData */ )
+    {
+        bool timeHasPassed = (block.timestamp - s_lastTimeStamp >= i_interval);
+        bool isOpen = s_raffleState == RaffleState.OPEN;
+        bool hasBalance = address(this).balance > 0;
+        bool hasPlayers = s_players.length > 0;
+
+        upkeepNeeded = timeHasPassed && isOpen && hasBalance && hasPlayers;
+        return (upkeepNeeded, hex"");
+    }
+
+    function performUpkeep(bytes calldata /* performData */ ) external {
+        (bool upkeepNeeded,) = checkUpKeep("");
+
+        if (!upkeepNeeded) {
+            revert Raffle_UpkeepNotNeeded(address(this).balance, s_players.length, uint256(s_raffleState));
         }
 
         s_raffleState = RaffleState.CALCULATING;
@@ -97,10 +121,10 @@ contract Raffle is VRFConsumerBaseV2Plus {
             )
         });
 
-        uint256 requestId = s_vrfCoordinator.requestRandomWords(request);
+        s_vrfCoordinator.requestRandomWords(request);
     }
 
-    function fulfillRandomWords(uint256   _requestId, uint256[] calldata _randomWords) internal override {
+    function fulfillRandomWords(uint256, /* _requestId */ uint256[] calldata _randomWords) internal override {
         uint256 indexOfWinner = _randomWords[0] % s_players.length;
         address payable recentWinner = s_players[indexOfWinner];
 
