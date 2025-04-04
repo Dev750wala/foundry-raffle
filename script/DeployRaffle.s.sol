@@ -12,6 +12,10 @@ contract DeployRaffle is Script {
         HelperConfig helperConfig = new HelperConfig();
         HelperConfig.NetworkConfig memory config = helperConfig.getConfig();
 
+        if (config.subscriptionId == 0) {
+            // create a subscription
+        }
+
         vm.startBroadcast();
         Raffle raffle = new Raffle(
             config.entranceFee,
